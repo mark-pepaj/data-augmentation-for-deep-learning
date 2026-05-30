@@ -1,39 +1,92 @@
-import torch
-import torch.nn as nn
-import torchvision
 import torchvision.transforms as transforms
-from torchvision import datasets
-from torch.utils.data import DataLoader
-from PIL import Image
-import matplotlib.pyplot as plt
+from dataclasses import dataclass
+from typing import Optional
+
+@dataclass
+class RandomAffine:
+    degrees: float
+    translate: Optional[tuple] = None
+    scale: Optional[tuple] = None
+    shear: Optional[tuple] = None
 
 
-random_rotate = transforms.RandomRotation(10) # 10 degrees
-random_affine = transforms.RandomAffine(degrees=10, translate=(0.1, 0.1), scale=(0.9, 1.1), shear=10)
-horizontal_flip = transforms.RandomHorizontalFlip(p=0.5) # prob that it flips
-vertical_flip = transforms.RandomVerticalFlip(p=0.5) # prob that it flips
-augment_shape = transforms.RandomResizedCrop((28, 28), scale=(0.5, 1), ratio=(0.5, 2))
-augment_color = transforms.ColorJitter(brightness=0.5, contrast=0, saturation=0, hue=0)
-
-train_augments = transforms.Compose([
-    random_affine,
-    transforms.ToTensor()
-    ])
-test_augments = transforms.Compose([transforms.ToTensor()])
+@dataclass
+class RandomRotation:
+    degrees: float
 
 
-train_dataset = datasets.MNIST(
-    root='./data', 
-    train=True, 
-    download=True,
-    transform=train_augments
-)
+@dataclass
+class HorizontalFlip:
+    p: float = 0.5
 
-train_loader = DataLoader(train_dataset, batch_size=64, shuffle=False)
 
-for i, (X, target) in enumerate(train_loader):
-    X = X.view(-1, X.shape[-2], X.shape[-1])
-    for j in range(X.shape[0]):
-        plt.imshow(X[j])
-        plt.show()
-    break
+@dataclass
+class VerticalFlip:
+    p: float = 0.5
+
+
+@dataclass
+class RandomResizedCrop:
+    size: tuple
+    scale: tuple = (0.08, 1.0)
+    ratio: tuple = (0.75, 1.33)
+
+
+@dataclass
+class ColorJitter:
+    brightness: float = 0
+    contrast: float = 0
+    saturation: float = 0
+    hue: float = 0
+
+
+class Augmentor:
+    def __init__(self, augment_configs: list = None, pad: int = None):
+        self.augment_configs = augment_configs or []
+        self.pad = pad
+
+
+    def _build_transform(self, config):
+        if isinstance(config, RandomAffine):
+            return transforms.RandomAffine(
+                    degrees=config.degrees,
+                    translate=config.translate,
+                    scale=config.scale,
+                    shear=config.shear
+                    )
+        elif isinstance(config, RandomRotation):
+            return transforms.RandomRotation(config.degrees)
+        elif isinstance(config, HorizontalFlip):
+            return transforms.RandomHorizontalFlip(p=config.p)
+        elif isinstance(config, VerticalFlip):
+            return transforms.RandomVerticalFlip(p=config.p)
+        elif isinstance(config, RandomResizedCrop):
+            return transforms.RandomResizedCrop(config.size, scale=config.scale, ratio=config.ratio)
+        elif isinstance(config, ColorJitter):
+            return transforms.ColorJitter(
+                    brightness=config.brightness,
+                    contrast=config.contrast,
+                    saturation=config.saturation,
+                    hue=config.hue
+                    )
+        else:
+            raise ValueError(f"Unrecognizes transform config type: {type(config)}")
+
+    
+    def get_train_transforms(self):
+        transform_list = [self._build_transform(config) for config in self.augment_configs]
+        if self.pad is not None:
+            transform_list.append(transforms.Pad(self.pad))
+        transform_list.append(transforms.ToTensor())
+
+        return transforms.Compose(transform_list)
+
+
+    def get_val_transforms(self):
+        transform_list = []
+        if self.pad is not None:
+            transform_list.append(transforms.Pad(self.pad))
+        transform_list.append(transforms.ToTensor())
+
+        return transforms.Compose(transform_list)
+
